@@ -1,0 +1,79 @@
+# Configuration for the goals service. Named goals.yml (not application.yml) so several services can
+# share one JVM host without their settings colliding.
+spring:
+  application:
+    name: sprout-goals
+  datasource:
+    url: ${GOALS_DB_URL:jdbc:postgresql://localhost:5432/sprout?currentSchema=goals}
+    username: ${GOALS_DB_USER:sprout}
+    password: ${GOALS_DB_PASSWORD:sprout}
+    hikari:
+      maximum-pool-size: 5
+      pool-name: goals
+      connection-timeout: 2000   # fail fast when the database is gone (CHAOS-01's lesson)
+      validation-timeout: 1000
+  flyway:
+    locations: classpath:db/goals
+    schemas: goals
+    default-schema: goals
+  jackson:
+    default-property-inclusion: non_null   # absent, never null: the contracts say so
+    deserialization:
+      fail-on-unknown-properties: true
+  jmx:
+    enabled: false
+
+server:
+  port: ${GOALS_PORT:8117}
+  address: ${GOALS_BIND:127.0.0.1}
+  tomcat:
+    threads:
+      max: 16
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  otlp:
+    metrics:
+      export:
+        enabled: ${OTEL_ENABLED:false}
+        url: ${OTEL_METRICS_URL:http://localhost:4318/v1/metrics}
+        step: 15s
+    tracing:
+      endpoint: ${OTEL_TRACES_URL:http://localhost:4318/v1/traces}
+      export:
+        enabled: ${OTEL_ENABLED:false}   # send traces to a collector only when one runs
+  tracing:
+    enabled: true   # always carry the trace onward (W3C traceparent), even when nothing collects it
+    sampling:
+      probability: 1.0
+  metrics:
+    tags:
+      service: sprout-goals
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:}
+  pattern:
+    correlation: "[%X{requestId:-}] "
+
+sprout:
+  goals:
+    every: ${GOALS_EVERY:30s}                # how often round-ups are read, swept and pots' shares bought
+    service-key: ${SPROUT_SERVICE_KEY:dev-only-service-key}
+    minimum: "100.00"                        # each contribution
+    maximum: "100000.00"
+    max-open: 5
+    sweep-at: "100.00"                       # round-ups are swept once at least this much is waiting
+    retry-after: ${GOALS_RETRY_AFTER:1h}     # after a refused sweep or buy (no AutoPay, no money), wait this long
+    marketdata-url: ${GOALS_MARKETDATA_URL:http://127.0.0.1:8103}
+    oms-url: ${GOALS_OMS_URL:http://127.0.0.1:8109}
+    accounts-url: ${GOALS_ACCOUNTS_URL:http://127.0.0.1:8104}
+    payments-url: ${GOALS_PAYMENTS_URL:http://127.0.0.1:8105}
