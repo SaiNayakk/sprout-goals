@@ -14,7 +14,7 @@
   <!-- Released as git tags vX.Y.Z; hosts build a release from its tag (sprout-platform ADR-011). -->
   <groupId>com.github.SaiNayakk</groupId>
   <artifactId>sprout-goals</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
   <name>sprout-goals</name>
   <description>Pots of invested money with targets, and round-ups from everyday UPI spends.</description>
 
