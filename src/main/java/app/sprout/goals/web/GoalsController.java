@@ -61,6 +61,7 @@ public class GoalsController {
 
     @PostMapping("/v1/pots")
     public ResponseEntity<Map<String, Object>> create(@RequestHeader(value = "X-User-Id", required = false) String user,
+                                                      @RequestHeader(value = "Idempotency-Key", required = false) String key,
                                                       @RequestBody PotRequest req) {
         LocalDate date;
         try {
@@ -68,8 +69,10 @@ public class GoalsController {
         } catch (DateTimeParseException e) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "targetDate is a date like 2027-03-31.");
         }
-        Pot p = goals.create(userId(user), req.name(), req.target(), date, req.symbol());
-        return ResponseEntity.status(HttpStatus.CREATED).body(pot(p, goals.holding(p, null)));
+        Goals.Started s = goals.create(userId(user), key, req.name(), req.target(), date, req.symbol());
+        Pot p = s.pot();
+        Map<String, Object> body = pot(p, goals.holding(p, s.created() ? null : prices(List.of(p)).get(p.symbol())));
+        return ResponseEntity.status(s.created() ? HttpStatus.CREATED : HttpStatus.OK).body(body);
     }
 
     @GetMapping("/v1/pots/{id}")

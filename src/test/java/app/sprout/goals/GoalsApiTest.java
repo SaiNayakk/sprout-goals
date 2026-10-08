@@ -175,6 +175,24 @@ class GoalsApiTest {
     }
 
     @Test
+    void aPotCreatedAgainWithTheSameKeyIsCreatedOnce() throws Exception {
+        Map<String, String> req = Map.of("name", "Bike", "target", "40000", "symbol", "KOSHA");
+        String key = UUID.randomUUID().toString();
+        JsonNode first = body(as(post("/v1/pots").header("Idempotency-Key", key), req).andExpect(status().isCreated()).andExpect(MATCHES_CONTRACT));
+        JsonNode again = body(as(post("/v1/pots").header("Idempotency-Key", key), req).andExpect(status().isOk()).andExpect(MATCHES_CONTRACT));
+        assertThat(again.path("id").asText()).isEqualTo(first.path("id").asText());
+        as(get("/v1/pots"), null).andExpect(jsonPath("$.pots.length()").value(1));
+        as(post("/v1/pots").header("Idempotency-Key", UUID.randomUUID().toString()), req).andExpect(status().isCreated());
+        as(get("/v1/pots"), null).andExpect(jsonPath("$.pots.length()").value(2));
+        as(post("/v1/pots"), req).andExpect(status().isCreated());
+        as(post("/v1/pots"), req).andExpect(status().isCreated());
+        as(get("/v1/pots"), null).andExpect(jsonPath("$.pots.length()").value(4));
+        as(post("/v1/pots").header("Idempotency-Key", "short"), req)
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        as(get("/v1/pots"), null).andExpect(jsonPath("$.pots.length()").value(4));
+    }
+
+    @Test
     void aContributionBuysWholeSharesOfThePotsShareOnce() throws Exception {
         JsonNode p = pot("Laptop", "60000", "SAPLING");
         String key = UUID.randomUUID().toString();
