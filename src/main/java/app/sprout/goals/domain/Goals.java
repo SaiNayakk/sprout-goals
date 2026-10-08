@@ -47,6 +47,9 @@ public class Goals {
     /** A contribution, and whether this call made it (or found it from an earlier call with the same key). */
     public record Contributed(Movement movement, boolean created) {}
 
+    /** A pot, and whether this call made it (or found it from an earlier call with the same key). */
+    public record Started(Pot pot, boolean created) {}
+
     private final JdbcClient db;
     private final Clock clock;
     private final Upstreams up;
@@ -61,7 +64,18 @@ public class Goals {
 
     // ── pots ─────────────────────────────────────────────────────────────────
 
-    public Pot create(UUID user, String name, String target, LocalDate targetDate, String symbol) {
+    /** Starts a pot. With a key, the same customer sending it again gets the pot it made the first time. */
+    public Started create(UUID user, String key, String name, String target, LocalDate targetDate, String symbol) {
+        if (key != null && (key.length() < 8 || key.length() > 100)) {
+            throw new ApiException(ErrorCode.VALIDATION_FAILED, "An Idempotency-Key is 8 to 100 characters (e.g. a UUID).");
+        }
+        if (key != null) {
+            // a replay finds the pot even if the date or the number of open pots would refuse it now
+            Optional<Pot> earlier = potByKey(user, key);
+            if (earlier.isPresent()) {
+                return new Started(earlier.get(), false);
+            }
+        }
         String n = name == null ? "" : name.trim();
         if (n.isEmpty() || n.length() > 40) {
             throw new ApiException(ErrorCode.VALIDATION_FAILED, "Give the pot a name (1 to 40 characters).");
@@ -83,9 +97,14 @@ public class Goals {
             throw new ApiException(ErrorCode.TOO_MANY_POTS, "You have " + open + " open pots, the most there can be. Close one first.");
         }
         UUID id = UUID.randomUUID();
-        db.sql("INSERT INTO pots (id, user_id, name, symbol, target_paise, target_date, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?)")
-                .params(id, user, n, sym, paise, targetDate == null ? null : java.sql.Date.valueOf(targetDate), ts(clock.instant())).update();
-        return pot(user, id);
+        try {
+            db.sql("INSERT INTO pots (id, user_id, name, symbol, target_paise, target_date, status, created_at, idempotency_key) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)")
+                    .params(id, user, n, sym, paise, targetDate == null ? null : java.sql.Date.valueOf(targetDate), ts(clock.instant()), key).update();
+        } catch (DuplicateKeyException e) {
+            return new Started(potByKey(user, key).orElseThrow(), false);
+        }
+        return new Started(pot(user, id), true);
     }
 
     public List<Pot> pots(UUID user) {
@@ -262,6 +281,10 @@ public class Goals {
     }
 
     // ── rows ─────────────────────────────────────────────────────────────────
+
+    private Optional<Pot> potByKey(UUID user, String key) {
+        return db.sql(POT_SQL + " WHERE user_id = ? AND idempotency_key = ?").params(user, key).query(Goals::pot).optional();
+    }
 
     private Optional<Movement> byKey(UUID user, String key) {
         return db.sql(MOVEMENT_SQL + " WHERE user_id = ? AND idempotency_key = ?").params(user, key).query(Goals::movement).optional();
